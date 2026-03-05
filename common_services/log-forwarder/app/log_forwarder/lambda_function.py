@@ -22,6 +22,7 @@ INDEX_NAME           : OpenSearch index to write into   (default: "lambda-logs")
 AWS_REGION           : AWS region                        (default: "ap-southeast-2")
 """
 
+
 import base64
 import gzip
 import json

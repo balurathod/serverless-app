@@ -34,7 +34,6 @@ logger = Logger(service=SERVICE_NAME, level=LOG_LEVEL)
 metrics = Metrics(namespace="AIDocProcessor", service=SERVICE_NAME)
 tracer = Tracer(service=SERVICE_NAME)
 
-
 @tool(name="send_whatsapp_notification", description="Send WhatsApp notification with extracted invoice data")
 def send_whatsapp_notification(
     extracted_data: str = None,
