@@ -181,6 +181,7 @@ class LogForwarderStack(BaseServiceStack):
             environment={
                 "OPENSEARCH_ENDPOINT": domain.domain_endpoint,
                 "INDEX_NAME": "lambda-logs",
+                "OPENSEARCH_SECRET_ARN": master_user_secret.secret_arn,
                 # AWS_REGION is injected automatically by the Lambda runtime —
                 # setting it manually is rejected by CDK/Lambda as a reserved var.
             },
@@ -188,6 +189,11 @@ class LogForwarderStack(BaseServiceStack):
 
         # Grant the forwarder Lambda read/write access to OpenSearch
         domain.grant_read_write(log_forwarder_lambda)
+
+        # Grant the forwarder Lambda permission to read the FGAC master-user secret.
+        # With FGAC enabled the Lambda authenticates via HTTP basic auth rather than
+        # IAM SigV4 (which would require an OpenSearch internal role mapping).
+        master_user_secret.grant_read(log_forwarder_lambda)
 
         # ── CloudFormation Outputs (exported for cross-stack references) ───
         # Other stacks import these with:

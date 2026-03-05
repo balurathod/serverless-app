@@ -19,6 +19,11 @@ Environment variables
 OPENSEARCH_ENDPOINT  : OpenSearch domain endpoint (no scheme, no trailing slash)
                        e.g. "search-ai-doc-logs-dev-xxx.ap-southeast-2.es.amazonaws.com"
 INDEX_NAME           : OpenSearch index to write into   (default: "lambda-logs")
+OPENSEARCH_SECRET_ARN: ARN of the Secrets Manager secret that holds the FGAC master-user
+                       credentials (JSON with "username" and "password" keys).  When set,
+                       the client uses HTTP basic auth instead of IAM SigV4 — required
+                       when FGAC is enabled and the Lambda IAM role is not mapped to an
+                       OpenSearch internal role.
 AWS_REGION           : Injected automatically by the Lambda runtime — do NOT set
                        this manually (CDK/Lambda treats it as a reserved variable).
 """
@@ -38,15 +43,30 @@ from opensearchpy import AWSV4SignerAuth, OpenSearch, RequestsHttpConnection, he
 OPENSEARCH_ENDPOINT = os.environ["OPENSEARCH_ENDPOINT"]
 INDEX_NAME = os.environ.get("INDEX_NAME", "lambda-logs")
 REGION = os.environ.get("AWS_REGION", "ap-southeast-2")
+OPENSEARCH_SECRET_ARN = os.environ.get("OPENSEARCH_SECRET_ARN")
+
+
+def _build_auth():
+    """Return HTTP basic-auth tuple when FGAC credentials are available, else IAM SigV4.
+
+    With FGAC enabled, the Lambda IAM role must either be mapped to an OpenSearch
+    internal role (complex) or authenticate as the master user via basic auth (simpler).
+    """
+    if OPENSEARCH_SECRET_ARN:
+        sm = boto3.client("secretsmanager")
+        secret = json.loads(
+            sm.get_secret_value(SecretId=OPENSEARCH_SECRET_ARN)["SecretString"]
+        )
+        return (secret["username"], secret["password"])
+    credentials = boto3.Session().get_credentials()
+    return AWSV4SignerAuth(credentials, REGION, "es")
 
 
 def _build_client() -> OpenSearch:
-    """Create an OpenSearch client signed with the Lambda execution role credentials."""
-    credentials = boto3.Session().get_credentials()
-    auth = AWSV4SignerAuth(credentials, REGION, "es")
+    """Create an authenticated OpenSearch client."""
     return OpenSearch(
         hosts=[{"host": OPENSEARCH_ENDPOINT, "port": 443}],
-        http_auth=auth,
+        http_auth=_build_auth(),
         use_ssl=True,
         verify_certs=True,
         connection_class=RequestsHttpConnection,
