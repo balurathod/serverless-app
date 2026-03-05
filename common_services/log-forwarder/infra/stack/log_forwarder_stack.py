@@ -16,7 +16,13 @@ named export so any stack in the same account/region can reference it:
     Fn.import_value(f"OpenSearchEndpoint-{env_name}")
 """
 
+import os
+import shutil
+import subprocess
+import sys
+
 import aws_cdk as cdk
+import jsii
 from aws_cdk import (
     aws_iam as iam,
     aws_lambda as _lambda,
@@ -27,6 +33,46 @@ from aws_cdk import (
 )
 from constructs import Construct
 from constructs_lib.base_lambda_stack import BaseServiceStack
+
+# Absolute path to the Lambda source directory, resolved relative to this file
+# so it works regardless of where `cdk` is invoked from.
+_APP_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "app", "log_forwarder")
+)
+
+
+@jsii.implements(cdk.ILocalBundling)
+class _LocalPipBundler:
+    """Installs Python deps and copies source using the *host* pip.
+
+    CDK tries this first; if it raises or returns False, it falls back to
+    Docker.  This avoids the ``docker exited with status 127`` error that
+    occurs on Windows when the SAM build image doesn't have ``bash`` on PATH.
+    """
+
+    def try_bundle(self, output_dir: str, /, **_kwargs) -> bool:  # type: ignore[override]
+        try:
+            subprocess.run(
+                [
+                    sys.executable, "-m", "pip", "install",
+                    "-r", os.path.join(_APP_DIR, "requirements.txt"),
+                    "-t", output_dir,
+                    "--quiet",
+                ],
+                check=True,
+            )
+            # Copy Lambda source files on top of the installed packages
+            for item in os.listdir(_APP_DIR):
+                src = os.path.join(_APP_DIR, item)
+                dst = os.path.join(output_dir, item)
+                if os.path.isfile(src):
+                    shutil.copy2(src, dst)
+                elif os.path.isdir(src):
+                    shutil.copytree(src, dst, dirs_exist_ok=True)
+            return True
+        except Exception as exc:  # noqa: BLE001
+            print(f"[LocalBundler] host pip install failed ({exc}); falling back to Docker.")
+            return False
 
 
 class LogForwarderStack(BaseServiceStack):
@@ -76,9 +122,9 @@ class LogForwarderStack(BaseServiceStack):
         # log group. Decodes the gzip+base64 envelope and bulk-indexes each
         # structured log event into the OpenSearch domain above.
         #
-        # BundlingOptions installs opensearch-py at CDK deploy time using the
-        # official Lambda build image (requires Docker to be running locally
-        # and in CI).
+        # _LocalPipBundler is tried first (host pip, no Docker needed).
+        # Docker is used as a fallback for CI environments where host Python
+        # may not have the right architecture for Lambda-compatible wheels.
         log_forwarder_lambda = _lambda.Function(
             self,
             "LogForwarderLambda",
@@ -86,8 +132,9 @@ class LogForwarderStack(BaseServiceStack):
             runtime=_lambda.Runtime.PYTHON_3_12,
             handler="lambda_function.lambda_handler",
             code=_lambda.Code.from_asset(
-                "../app/log_forwarder",
+                _APP_DIR,
                 bundling=cdk.BundlingOptions(
+                    local=_LocalPipBundler(),
                     image=_lambda.Runtime.PYTHON_3_12.bundling_image,
                     command=[
                         "bash",
