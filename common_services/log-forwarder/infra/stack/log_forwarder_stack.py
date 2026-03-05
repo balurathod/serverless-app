@@ -115,7 +115,7 @@ class LogForwarderStack(BaseServiceStack):
             self,
             "ObservabilityDomain",
             domain_name=f"common-logs-{self.env_name}",
-            version=opensearch.EngineVersion.OPENSEARCH_2_11,
+            version=opensearch.EngineVersion.OPENSEARCH_2_19,
             capacity=opensearch.CapacityConfig(
                 data_nodes=1,
                 data_node_instance_type="t3.small.search",

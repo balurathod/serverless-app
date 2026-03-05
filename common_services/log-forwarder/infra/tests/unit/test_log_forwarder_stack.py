@@ -60,10 +60,10 @@ def test_opensearch_domain_name_includes_env(template):
     })
 
 
-def test_opensearch_engine_version_is_opensearch_2_11(template):
-    """OpenSearch domain must use OpenSearch 2.11."""
+def test_opensearch_engine_version_is_opensearch_2_19(template):
+    """OpenSearch domain must use OpenSearch 2.19."""
     template.has_resource_properties("AWS::OpenSearchService::Domain", {
-        "EngineVersion": "OpenSearch_2.11",
+        "EngineVersion": "OpenSearch_2.19",
     })
 
 
